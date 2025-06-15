@@ -58,7 +58,7 @@ Optional parameters:
 
 You can also use the TTS CLI directly:
 ```bash
-tts --model_name tts_models/multilingual/multi-dataset/xtts_v2 --use_cuda --speaker_idx "Damien Black" --language_idx "en" --text "test 123"
+tts --model_name tts_models/multilingual/multi-dataset/xtts_v2 --use_cuda true --speaker_idx "Damien Black" --language_idx "en" --out_path output.wav --text "This is a test."
 ```
 
 ## License
