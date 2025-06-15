@@ -1,0 +1,10 @@
+[project]
+name = "tts-api"
+version = "0.1.0"
+description = "A simple FastAPI wrapper for Coqui TTS that allows text-to-speech conversion over a RESTful API."
+authors = [{ name = "Webber" }]
+dependencies = []
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

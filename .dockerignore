@@ -1,0 +1,11 @@
+.git/
+Dockerfile
+build/
+dist/
+TTS.egg-info/
+tests/outputs/*
+__pycache__/
+*.pyc
+.conda
+Scripts
+pyvenv.cfg
