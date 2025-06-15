@@ -11,6 +11,8 @@ from pydantic import BaseModel
 import torch
 from TTS.api import TTS
 from typing import Optional
+import base64
+import io
 
 print("Starting TTS server...")
 
@@ -38,23 +40,31 @@ class TTSRequest(BaseModel):
 @app.post("/synthesize")
 async def synthesize_speech(request: TTSRequest):
     try:
-        output_path = "output.wav"
+        # Create a bytes buffer to store the audio
+        audio_buffer = io.BytesIO()
 
         if request.speaker_wav_path:
             tts.tts_to_file(
                 text=request.text,
                 speaker_wav=request.speaker_wav_path,
                 language=request.language,
-                file_path=output_path
+                file_path=audio_buffer
             )
         else:
             tts.tts_to_file(
                 text=request.text,
                 language=request.language,
                 speaker=request.speaker,
-                file_path=output_path
+                file_path=audio_buffer
             )
 
-        return {"status": "success", "file_path": output_path}
+        # Get the audio data and encode it to base64
+        audio_data = audio_buffer.getvalue()
+        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+
+        return {
+            "status": "success",
+            "audioBase64": audio_base64
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
