@@ -14,6 +14,10 @@ from typing import Optional
 import base64
 import io
 import soundfile as sf
+import traceback
+import sys
+import re
+import json
 
 print("Starting TTS server...")
 
@@ -38,15 +42,34 @@ class TTSRequest(BaseModel):
     speaker_wav_path: Optional[str] = None
     speaker: str = "Damien Black"
 
-class SegmentInfo(BaseModel):
-    text: str
+class PhonemeInfo(BaseModel):
+    phoneme: str
     start_time: float
     end_time: float
     duration: float
 
+def get_phonemes_from_text(text: str) -> list:
+    # Simple phoneme approximation based on text
+    # This is a basic implementation - you might want to use a more sophisticated approach
+    text = text.lower()
+    # Split into words and then into characters
+    words = text.split()
+    phonemes = []
+    for word in words:
+        # Add word boundary
+        phonemes.append(' ')
+        # Add characters as phonemes
+        for char in word:
+            if char.isalpha():
+                phonemes.append(char)
+    print(f"Generated phonemes: {phonemes}")
+    return phonemes
+
 @app.post("/synthesize")
 async def synthesize_speech(request: TTSRequest):
     try:
+        print(f"\nReceived request with text: {request.text}")
+
         # Create a bytes buffer to store the audio
         audio_buffer = io.BytesIO()
 
@@ -68,23 +91,34 @@ async def synthesize_speech(request: TTSRequest):
         sf.write(audio_buffer, wav, tts.synthesizer.output_sample_rate, format='WAV')
 
         # Calculate timing information
-        # Split text into words for basic timing
-        words = request.text.split()
         total_duration = len(wav) / tts.synthesizer.output_sample_rate
-        avg_word_duration = total_duration / len(words)
+        print(f"Total audio duration: {total_duration} seconds")
 
-        # Create word-level timing information
-        segments = []
+        # Get phonemes from text
+        phonemes = get_phonemes_from_text(request.text)
+        print(f"Number of phonemes: {len(phonemes)}")
+
+        # Create phoneme-level timing information
+        phoneme_info = []
         current_time = 0.0
 
-        for word in words:
-            # Estimate duration based on word length
-            # This is a simple approximation - you might want to adjust the scaling
-            duration = len(word) * (avg_word_duration / 5)  # Adjust the divisor to fine-tune timing
+        # Calculate average phoneme duration
+        avg_phoneme_duration = total_duration / len(phonemes)
+        print(f"Average phoneme duration: {avg_phoneme_duration} seconds")
+
+        for phoneme in phonemes:
+            # Estimate duration based on phoneme type
+            if phoneme == ' ':  # Word boundary
+                duration = avg_phoneme_duration * 0.5
+            elif phoneme in ['a', 'e', 'i', 'o', 'u']:
+                duration = avg_phoneme_duration * 1.5
+            else:
+                duration = avg_phoneme_duration * 0.8
+
             end_time = current_time + duration
 
-            segments.append(SegmentInfo(
-                text=word,
+            phoneme_info.append(PhonemeInfo(
+                phoneme=phoneme,
                 start_time=current_time,
                 end_time=end_time,
                 duration=duration
@@ -92,22 +126,50 @@ async def synthesize_speech(request: TTSRequest):
 
             current_time = end_time
 
+        print(f"Generated phoneme info: {[p.dict() for p in phoneme_info[:5]]}")  # Print first 5 phonemes
+
         # Get the audio data and encode it to base64
         audio_data = audio_buffer.getvalue()
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
 
-        return {
+        # Create the response with explicit phonemes array
+        response = {
             "status": "success",
             "audioBase64": audio_base64,
+            "audioMime": "audio/wav",
             "totalDuration": total_duration,
-            "segments": [s.dict() for s in segments],
+            "phonemes": [p.dict() for p in phoneme_info],  # Explicitly include phonemes
             "metadata": {
                 "sampleRate": tts.synthesizer.output_sample_rate,
                 "language": request.language,
                 "speaker": request.speaker if not request.speaker_wav_path else "custom",
-                "numWords": len(words),
-                "avgWordDuration": avg_word_duration
+                "numPhonemes": len(phonemes),
+                "avgPhonemeDuration": avg_phoneme_duration
             }
         }
+
+        # Print response structure for debugging
+        print("\nResponse structure:")
+        print(f"Status: {response['status']}")
+        print(f"Total duration: {response['totalDuration']}")
+        print(f"Number of phonemes in response: {len(response['phonemes'])}")
+        print(f"First few phonemes: {response['phonemes'][:5]}")
+        print(f"Metadata: {json.dumps(response['metadata'], indent=2)}")
+
+        return response
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Get detailed error information
+        error_info = {
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "traceback": traceback.format_exc()
+        }
+        print(f"Error details: {error_info}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "traceback": traceback.format_exc()
+            }
+        )
